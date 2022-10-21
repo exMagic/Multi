@@ -4,9 +4,15 @@
 #include <WiFi.h>
 #include "secrets.h"
 #include "EspMQTTClient.h"
-
+#include "esp_adc_cal.h"
 #include <Battery18650Stats.h>
-#define ADC_PIN 15
+
+#define ADC_EN              14  //ADC_EN is the ADC detection enable port
+#define ADC_PIN             34
+char buff[512];
+int vref = 1100;
+
+#define ADC_PINMY 15
 Battery18650Stats battery(ADC_PIN);
 
 const int led = 2;
@@ -125,6 +131,25 @@ uint32_t readADC_Avg(int ADC_Raw)
 void setup()
 {
 
+  pinMode(ADC_EN, OUTPUT);
+  digitalWrite(ADC_EN, HIGH);
+  esp_adc_cal_characteristics_t adc_chars;
+  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars); // Check type of calibration value used to characterize ADC
+  
+  if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF)
+  {
+    Serial.printf("eFuse Vref:%u mV", adc_chars.vref);
+    vref = adc_chars.vref;
+  }
+  else if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP)
+  {
+    Serial.printf("Two Point --> coeff_a:%umV coeff_b:%umV\n", adc_chars.coeff_a, adc_chars.coeff_b);
+  }
+  else
+  {
+    Serial.println("Default Vref: 1100mV");
+  }
+
   tft.init();
   tft.setRotation(1);
 
@@ -144,18 +169,20 @@ void setup()
   // for (int thisReading = 0; thisReading < numReadings; thisReading++) {
   //   readings[thisReading] = 0;
   // }
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(2);
+
 }
 
 void loop()
 {
 
-  // int vref = 3300;
-  // uint16_t v = analogRead(ADC_PIN);
-  // uint16_t v2 = v-107;
-  // float battery_voltage = ((float)v2 / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
-  // String voltage = "Voltage :" + String(battery_voltage) + "V";
+  uint16_t v = analogRead(ADC_PIN);
+  float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+  String voltage = "Voltage :" + String(battery_voltage) + "V";
+  //Serial.println(voltage);
 
-  AN_Pot1_Raw = analogRead(ADC_PIN);
+  AN_Pot1_Raw = analogRead(ADC_PINMY);
   AN_Pot1_Filtered = readADC_Avg(AN_Pot1_Raw);
 
   unsigned long currentMillis = millis();
@@ -166,18 +193,16 @@ void loop()
     digitalWrite(led, ledState);
 
     tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(1);
     tft.setCursor(0, 0, 2);
+    // double f = (3125.0 - 114.0) / 4095.0;
+    // float c = 107 - (int)AN_Pot1_Filtered;
+    // float n = c / f * -1;
 
-    double f = (3150.0 - 107.0) / 4095.0;
-    float c = 107 - (int)AN_Pot1_Filtered;
-    float n = c / f * -1;
+    //loat s0 = (3125.0-114.0)/4095.0;
+    float s1 = AN_Pot1_Filtered * 0.7390767712 + 115.6529252;
 
-    float s0 = (3150.0-107.0)/4095.0;
-    float s1 = 107+(s0 * AN_Pot1_Filtered);
-
-    tft.println(s0);
+    //tft.println(s0);
+    tft.println(voltage);
     tft.println(s1);
     tft.println(AN_Pot1_Filtered);
 
